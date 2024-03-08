@@ -1,0 +1,1 @@
+{"name":"LogToVSCode","className":"Folder","filePaths":["default.project.json"],"children":[{"name":"Api1","className":"ModuleScript","filePaths":["roblox-plugin/src\\Api1.luau"]},{"name":"Api2","className":"ModuleScript","filePaths":["roblox-plugin/src\\Api2.luau"]},{"name":"LogToVsCode","className":"Script","filePaths":["roblox-plugin/src\\LogToVsCode.server.luau"]}]}

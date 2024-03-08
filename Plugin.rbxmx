@@ -1,0 +1,431 @@
+<roblox version="4">
+  <Item class="Folder" referent="0">
+    <Properties>
+      <string name="Name">LogToVSCode</string>
+    </Properties>
+    <Item class="ModuleScript" referent="1">
+      <Properties>
+        <string name="Name">Api1</string>
+        <string name="Source">local HttpService = game:GetService('HttpService')
+
+---
+
+local module = {}
+
+local Logger = {}
+Logger.__index = Logger
+
+function Logger.new(context)
+	local self = {}
+	self.Context = context
+	self._log = {}
+	self._cancelled = false
+	setmetatable(self, Logger)
+	return self
+end
+
+function Logger:AddLine(line)
+	self._log[#self._log + 1] = line
+end
+
+function Logger:UploadLogs()
+	assert(not self._cancelled, 'Cannot run UploadLogs on a cancelled Logger')
+	if not self._log[1] then
+		return
+	end
+	local success, err = pcall(function()
+		local log = self._log
+		self._log = {}
+		local success, err
+		while not success do
+			local minRetryTick = tick() + 5
+			local result
+			success, err = pcall(function()
+				result = HttpService:RequestAsync({
+					Url = 'http://127.0.0.1:32337/log/',
+					Method = 'POST',
+					Headers = {
+						['Content-Type'] = 'application/json',
+					},
+					Body = HttpService:JSONEncode({
+						Context = self.Context,
+						Logs = log,
+					}),
+				})
+			end)
+			if not success then
+				warn('Failed to upload to VS Code (retrying) because: HttpService', err)
+				if tick() &lt; minRetryTick then
+					task.wait(minRetryTick - tick())
+				end
+			else
+				if not result.Success then
+					warn('Failed to upload to VS Code (skipping) because: Status', result.StatusCode, result.Body)
+				end
+			end
+			if self._cancelled then
+				return
+			end
+		end
+	end)
+	if not success then
+		warn('Failed to upload to VS Code (unknown) because: Unknown',err)
+	end
+end
+
+function Logger:Cancel()
+	self._cancelled = true
+end
+
+module.Logger = Logger
+
+return module</string>
+      </Properties>
+    </Item>
+    <Item class="ModuleScript" referent="2">
+      <Properties>
+        <string name="Name">Api2</string>
+        <string name="Source">local HttpService = game:GetService('HttpService')
+
+local HTTP_POST_CHAR_LIMIT = 1000*900 -- requests will be split into chunks this big
+local LINE_CHAR_LIMIT = 1000*900*3 -- lines larger than this will be discarded
+local MAX_QUEUED = 10 -- once the queue reaches this size, queued logs will be removed and not sent to vs code
+
+---
+
+local module = {}
+
+function module:GetVersion(rbxVersion)
+	local result
+	local success, err = pcall(function()
+		result = HttpService:RequestAsync({
+			Url = 'http://localhost:32337/version',
+			Method = 'POST',
+			Body = HttpService:JSONEncode({
+				version = rbxVersion,
+			}),
+			Headers = {
+				["Content-Type"] = "application/json",
+			},
+		})
+	end)
+	if not success then
+		return false, err
+	end
+	if not result.Success then
+		if result.StatusCode ~= 404 then
+			return false, result.Body
+		end
+		return true, {0, 0, 3}
+	end
+	local json
+	success, err = pcall(function()
+		json = HttpService:JSONDecode(result.Body)
+	end)
+	if not success then
+		return false, 'JSON failure: '..err
+	elseif not json.success then
+		return false, json.reason and tostring(json.reason) or 'Unknown'
+	elseif not json.version then
+		return false, 'Missing version'
+	end
+	return true, json.version, json.requiredVersion
+end
+
+local Logger = {}
+Logger.__index = Logger
+
+function Logger.new(context)
+	local self = {}
+	self.Context = context
+	self._log = {}
+	self._logChars = 0
+	self._queued = {}
+	self._uploading = false
+	self._cancelled = false
+	setmetatable(self, Logger)
+	return self
+end
+
+function Logger:EnqueueCurrentLog()
+	if self._logChars == 0 then
+		return
+	end
+	self._queued[#self._queued + 1] = table.concat(self._log, '')
+	if #self._queued > MAX_QUEUED then
+		table.remove(self._queued, 1)
+	end
+	self._log = {}
+	self._logChars = 0
+end
+
+function Logger:AddLine(line)
+	local text = line..'\r\n'
+	if #text > LINE_CHAR_LIMIT then
+		return
+	end
+	while self._logChars + #text > HTTP_POST_CHAR_LIMIT do
+		local pre = text:sub(1, HTTP_POST_CHAR_LIMIT - self._logChars)
+		text = text:sub(HTTP_POST_CHAR_LIMIT - self._logChars + 1, -1)
+		self._log[#self._log + 1] = pre
+		self._logChars = HTTP_POST_CHAR_LIMIT
+		self:EnqueueCurrentLog()
+	end
+	self._log[#self._log + 1] = text
+	self._logChars = self._logChars + #text
+end
+
+function Logger:UploadLogs()
+	assert(not self._cancelled, 'Cannot run UploadLogs on a cancelled Logger')
+	if self._uploading then
+		return
+	end
+	self._uploading = true
+	local success, err = pcall(function()
+		if self._logChars > 0 then
+			self:EnqueueCurrentLog()
+		end
+		while self._queued[1] do
+			local minRetryTick = tick() + 5
+			local result
+			local success, err = pcall(function()
+				result = HttpService:RequestAsync({
+					Url = 'http://127.0.0.1:32337/log2/'..self.Context,
+					Method = 'POST',
+					Headers = {
+						['Content-Type'] = 'text/plain',
+					},
+					Body = self._queued[1],
+				})
+			end)
+			if not success then
+				warn('Failed to upload to VS Code (retrying) because: HttpService', err)
+				if tick() &lt; minRetryTick then
+					task.wait(minRetryTick - tick())
+				end
+			else
+				table.remove(self._queued, 1)
+				if not result.Success then
+					warn('Failed to upload to VS Code (skipping) because: Status', result.StatusCode, result.Body)
+				else
+					success, err = pcall(function()
+						result = HttpService:JSONDecode(result.Body)
+					end)
+					if not success then
+						warn('Failed to upload to VS Code (skipping) because: JSON',err,result.Body)
+					elseif not result.success then
+						warn('Failed to upload to VS Code (skipping) because: Sync',result.reason)
+					end
+				end
+			end
+			if self._cancelled then
+				return
+			end
+		end
+	end)
+	self._uploading = false
+	if not success then
+		warn('Failed to upload to VS Code (unknown) because: Unknown',err)
+	end
+end
+
+function Logger:Cancel()
+	self._cancelled = true
+end
+
+module.Logger = Logger
+
+return module</string>
+      </Properties>
+    </Item>
+    <Item class="Script" referent="3">
+      <Properties>
+        <string name="Name">LogToVsCode</string>
+        <token name="RunContext">0</token>
+        <string name="Source">local LogService = game:GetService('LogService')
+local RunService = game:GetService('RunService')
+
+if not RunService:IsEdit() then
+	return
+end
+
+local Api1 = require(script.Parent.Api1)
+local Api2 = require(script.Parent.Api2)
+
+--- Constants
+
+local UPLOAD_FREQUENCY = 1
+
+local CONTEXT = ('%s (%d): %s'):format(game.Name, game.PlaceId, 'All')
+
+local VSC_VERSION = {0, 0, 1}
+local RBX_VERSION = {0, 0, 1}
+
+local messageTypeMap = {
+	[Enum.MessageType.MessageOutput] = 'output',
+	[Enum.MessageType.MessageInfo] = 'info',
+	[Enum.MessageType.MessageWarning] = 'warn',
+	[Enum.MessageType.MessageError] = 'error',
+}
+
+--- Variables
+
+local vscPluginUpdateWarningShownThisSession = false
+
+local conns -- set when running, nil when not running; new value each run session, same value for a whole session
+
+local logger
+
+---
+
+-- format text for the terminal, including newline fixing and colorizing escape sequences
+local function formatText(text, messageType)
+	text = text:gsub('[\r\n]', '\r\n')
+	if messageType == 'error' then
+		return '\27[91m'..text..'\27[0m'
+	elseif messageType == 'warn' then
+		return '\27[93m'..text..'\27[0m'
+	elseif messageType == 'info' then
+		return '\27[96m'..text..'\27[0m'
+	elseif messageType == 'output' then
+		return text
+	end
+end
+
+local function isVersionOld(base, check)
+	if base[1] > check[1] then
+		return true
+	elseif base[1] &lt; check[1] then
+		return false
+	end
+	if base[2] > check[2] then
+		return true
+	elseif base[2] &lt; check[2] then
+		return false
+	end
+	if base[3] > check[3] then
+		return true
+	elseif base[3] &lt; check[3] then
+		return false
+	end
+	return false
+end
+
+local function formatVersion(version)
+	return ('%d.%d.%d'):format(version[1], version[2], version[3])
+end
+
+local function stop()
+	if conns then
+		for _, conn in pairs(conns) do
+			conn:Disconnect()
+		end
+		conns = nil
+		if logger then
+			logger:Cancel()
+		end
+	end
+end
+
+local function start()
+	if conns then
+		stop()
+	end
+	conns = {}
+	local sessionConns = conns
+
+	local canUseLog2
+	do
+		local success, versionOrError, reqVersion
+		while not success do
+			local minLoopTime = tick() + 5
+			success, versionOrError, reqVersion = Api2:GetVersion(RBX_VERSION)
+			if not success then
+				warn('Failed to get VS Code extension version. Is the extension running? Reason:',versionOrError)
+			end
+			if not success and tick() &lt; minLoopTime then
+				task.wait(minLoopTime - tick())
+			end
+			if conns ~= sessionConns then
+				return
+			end
+		end
+		if reqVersion and isVersionOld(reqVersion, RBX_VERSION) then
+			warn(
+				'Your Roblox Output Sync Roblox plugin is out of date! The VS Code extension is requiring at least version',
+				formatVersion(reqVersion)
+			)
+		end
+		if not vscPluginUpdateWarningShownThisSession and isVersionOld(VSC_VERSION, versionOrError) then
+			vscPluginUpdateWarningShownThisSession = true
+			print(
+				'An update is available for the Roblox Output Sync VS Code extension:',
+				formatVersion(versionOrError),'->',formatVersion(VSC_VERSION)
+			)
+		end
+		if versionOrError[1] >= 0 and versionOrError[2] >= 1 and versionOrError[3] >= 0 then
+			canUseLog2 = true
+		end
+	end
+
+	if canUseLog2 then
+		logger = Api2.Logger.new(CONTEXT)
+	else
+		logger = Api1.Logger.new(CONTEXT)
+	end
+
+	local disabled = false
+
+	conns[#conns + 1] = LogService.MessageOut:Connect(function(message, messageType)
+		if disabled then
+			return
+		end
+		disabled = true
+		pcall(function()
+			logger:AddLine(formatText(message, messageTypeMap[messageType]))
+		end)
+		disabled = false
+	end)
+	
+	spawn(function()
+		local lastUpload = 0
+		while conns == sessionConns do
+			if tick() - lastUpload >= UPLOAD_FREQUENCY then
+				lastUpload = tick()
+				logger:UploadLogs()
+			end
+			RunService.Heartbeat:Wait()
+		end
+	end)
+	
+	do
+		local logsToAdd = LogService:GetLogHistory()
+		for _, value in ipairs(logsToAdd) do
+			logger:AddLine(formatText(value.message, messageTypeMap[value.messageType]))
+		end
+	end
+end
+
+--- Setup
+
+do
+	local toolbar = plugin:CreateToolbar('VS Code Output '..formatVersion(RBX_VERSION))
+
+	local button = toolbar:CreateButton('Toggle', 'Turn output sync on/off', 'rbxassetid://4170103293')
+
+	button.Click:Connect(function()
+		if conns then
+			button:SetActive(false)
+			stop()
+		else
+			button:SetActive(true)
+			start()
+		end
+	end)
+
+	plugin.Unloading:Connect(stop)
+end</string>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>

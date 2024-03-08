@@ -1,0 +1,144 @@
+{
+  "name": "roblox-studio-to-vscode-output-synchronize",
+  "displayName": "Roblox Studio to VSCode Output Synchronize",
+  "description": "Synchronize roblox studio output on Visual Studio Code",
+  "repository": {
+		"type": "git",
+		"url": "https://github.com/corecii/Roblox-VS-Code-Output-Sync.git"
+	},
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.87.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "Roblox",
+    "Lua"
+  ],
+  "activationEvents": [
+    "*",
+    "onCommand:extension.start",
+    "onCommand:extension.stop"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "extension.start",
+        "title": "Start Server",
+        "category": "Roblox Output"
+      },
+      {
+        "command": "extension.stop",
+        "title": "Stop Server",
+        "category": "Roblox Output"
+      }
+    ],
+    "configuration": {
+      "title": "roblox-studio-to-vscode-output-synchronize",
+      "properties": {
+        "robloxStudioToVSCodeOutputSynchronize.startServerPort": {
+          "type": "number",
+          "default": 32337,
+          "description": "The port to start the local log capture server on",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "robloxStudioToVSCodeOutputSynchronize.startAutomatically": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to start automatically. It is suggested that you do not turn this on globally. Try turning it on per-workspace/project."
+        },
+        "robloxStudioToVSCodeOutputSynchronize.useOutputChannels": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use output channels instead of pseudo-terminals. Output channels support clickable file links but do not support proper colors."
+        },
+        "robloxStudioToVSCodeOutputSynchronize.useColorizerLabels": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Use [Output Colorizer](https://marketplace.visualstudio.com/items?itemName=IBM.output-colorizer)-compatible labels to colorize the output channel"
+        },
+        "robloxStudioToVSCodeOutputSynchronize.scriptPathAlwaysQuoted": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether to always quote file paths. If false, paths are only quoted if they contain a space."
+        },
+        "robloxStudioToVSCodeOutputSynchronize.scriptPathMini": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Whether to replace \"mini\" script paths such as `ServerStorage.Modules.Module:1`"
+        },
+        "robloxStudioToVSCodeOutputSynchronize.scriptPathRelative": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to use relative or absolute paths. Relative paths cannot be clicked but look nicer."
+        },
+        "robloxStudioToVSCodeOutputSynchronize.scriptPathMode": {
+          "type": "string",
+          "enum": [
+            "File",
+            "Roblox",
+            "File (Roblox)"
+          ],
+          "default": "File",
+          "description": "How script paths are displayed",
+          "enumDescriptions": [
+            "Show only the file path",
+            "Show only the Roblox path",
+            "Show both in the format of file_path (roblox_path)"
+          ]
+        },
+        "robloxStudioToVSCodeOutputSynchronize.scriptPathResolver": {
+          "type": "string",
+          "enum": [
+            "Rojo",
+            "Name",
+            "RojoName"
+          ],
+          "default": "RojoName",
+          "description": "How Roblox script paths are resolved to file paths",
+          "enumDescriptions": [
+            "Use Rojo's default.project.json to find files",
+            "Use the script name to find files",
+            "Use Rojo to find files and use the script name as a backup"
+          ]
+        },
+        "robloxStudioToVSCodeOutputSynchronize.watchFiles": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "If true, builds a script name to file path map internally by watching all Lua files in the workspace. For the Rojo resolver, this is used to resolve special file names such as `.server.lua` and is used to exclude files that do not exist on the file system. For the Name resolver, this is the entire backbone and is required for any resolution."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "20.2.5",
+    "@types/vscode": "^1.87.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.8",
+    "@typescript-eslint/parser": "^5.59.8",
+    "@vscode/test-electron": "^2.3.2",
+    "eslint": "^8.41.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.1.3"
+  },
+  "dependencies": {
+    "@types/express": "^4.17.21",
+    "ansi-regex": "^6.0.1",
+    "chalk": "^5.3.0",
+    "express": "^4.18.3"
+  }
+}
